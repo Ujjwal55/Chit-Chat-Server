@@ -7,6 +7,7 @@ import { getSockets } from "../services/socket.service";
 import { Conversation } from "../models/conversation.model";
 import cookieParser from "cookie-parser";
 import { socketAuthenticator } from "../middleware/auth.middleware";
+import { ICustomSocket } from "../types/socket.interface";
 
 const app = express()
 
@@ -30,27 +31,23 @@ io.use((socket: any, next) => {
     )
 })
 
-io.on("connection", (socket) => {
-    console.log("Connected to socket.io", socket.id);
-    const user = {
-        _id: "dsdfds",
-        name: "asdfg"
-    }
-    userSocketIds.set(user._id.toString(), socket.id);
-    socket.on(NEW_MESSAGE, async ({chatId, members, message}) => {
+io.on("connection", (socket: ICustomSocket) => {
+    const user = socket?.user
+    userSocketIds.set(user?._id.toString(), socket?.id);
+    socket.on(NEW_MESSAGE, async ({chatId, members, message}: any) => {
         const messageForRealTime = {
             content: message,
             _id: uuid(),
             sender: {
-                _id: user._id,
-                fullName: user.name
+                _id: user?._id,
+                fullName: user?.fullName
             },
             chat: chatId,
             createdAt: new Date().toISOString()
         }
         const messageForDb = {
             content: message,
-            sender: user._id,
+            sender: user?._id,
             chat: chatId,
         }
         const usersSocket = getSockets(members, userSocketIds);
@@ -68,7 +65,7 @@ io.on("connection", (socket) => {
 
     socket.on("disconnect", () => {
         console.log("Disconnected from socket.io", socket.id);
-        userSocketIds.delete(user._id.toString())
+        userSocketIds.delete(user?._id.toString())
     })
 })
 

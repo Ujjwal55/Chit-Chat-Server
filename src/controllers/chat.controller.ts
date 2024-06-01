@@ -30,12 +30,23 @@ export const getChats = asyncHandler(async (req: ICustomRequest, res: Response) 
         { $lookup: { from: "users", localField: "members", foreignField: "_id", as: "membersInfo" } },
         {
             $addFields: {
-                otherMembers: { $filter: { input: "$membersInfo", as: "member", cond: { $ne: ["$$member._id", userId] } } },
-                chatName: { $cond: { if: "$groupChat", then: "$name", else: "$otherMembers.fullName" } }
+              otherMembers: { $filter: { input: "$membersInfo", as: "member", cond: { $ne: ["$$member._id", userId] } } },
             }
-        },
+          },
+          {
+            $addFields: {
+              chatName: {
+                $cond: {
+                  if: "$groupChat",
+                  then: "$name",
+                  else: { $arrayElemAt: ["$otherMembers.fullName", 0] }
+                }
+              }
+            }
+          },
         { $project: { otherMembers: 1, chatName: 1 } }
     ]);
+    console.log("userChaaaaaaa", userChats);
     res.status(200).json(userChats);
 });
 
@@ -211,6 +222,7 @@ export const addAttachement = asyncHandler(async (req: ICustomRequest, res: Resp
 export const getChatDetails = asyncHandler(async (req: ICustomRequest, res: Response) => {
     const { id: chatId } = req.params;
     const chat = await Chat.findById(chatId).populate("members", "id fullName profileImageURL");
+    console.log("chatDeeee", chat);
     res.status(200).json({ chat });
 });
 

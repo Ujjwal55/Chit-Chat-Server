@@ -26,7 +26,7 @@ export const socketAuthenticator = async (err: any, socket: any, next: any) => {
         if(err) {
             return next(err);
         }
-        const authToken = socket.request.cookies?.accessToken || socket.request.headers?.authorization?.replace("Bearer ", "");
+        const authToken = socket.request.cookies["chat-auth"] || socket.request.headers?.authorization?.replace("Bearer ", "");
         if(!authToken) {
             return next();
         }
