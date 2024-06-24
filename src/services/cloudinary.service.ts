@@ -1,6 +1,8 @@
+import * as dotenv from "dotenv"
 import {v2 as cloudinary} from 'cloudinary';
 import fs from "fs"
-          
+
+dotenv.config()
 
 cloudinary.config({ 
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME, 
@@ -17,9 +19,15 @@ const uploadOnCloudinary = async (file: any) => {
         console.log("File uploaded successfully on cloudinary!", cloudinaryResponse.url);
         return cloudinaryResponse;
     } catch (error){
+        console.log("errorrrrrrrrrrrr", error);
         fs.unlinkSync(file)
         return null;
     }
 }
 
-export default uploadOnCloudinary;
+const uploadMultipleFilesOnCloudinary = async (files: any[]) => {
+    const uploadPromises = files.map(file => uploadOnCloudinary(file.path));
+    return Promise.all(uploadPromises);
+}
+
+export {uploadOnCloudinary, uploadMultipleFilesOnCloudinary};

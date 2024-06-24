@@ -13,7 +13,7 @@ router.put("/add-members", verifyJWT, addMembers);
 router.delete("/remove-member", verifyJWT, removeMember);
 router.delete("/leave-group/:id", verifyJWT, leaveGroup);
 router.post("/add/:id", verifyJWT, addMessage);
-router.post("add/attachment/:id", verifyJWT, multipleAttachements, addAttachement);
+router.post("/add/attachment/:id", verifyJWT, multipleAttachements, addAttachement);
 router.get("/:id", verifyJWT, getChatDetails);
 router.post("/:id/rename", verifyJWT, renameGroup);
 router.get("/message/:id", verifyJWT, getChatMessages);

@@ -39,3 +39,9 @@ export interface IJWTPayload extends JwtPayload{
 export interface ICustomRequest extends Request{
     user?: IUserModel
 } 
+
+export interface MulterRequest extends Request {
+    files?: {
+        [fieldname: string]: Express.Multer.File[];
+    } | Express.Multer.File[];
+}

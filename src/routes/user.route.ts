@@ -14,9 +14,9 @@ router.get("/:id/verify/:token", verifyEmail);
 // secured routes
 router.get("/profile", verifyJWT, getUserProfile);
 router.get("/profile/:id", verifyJWT, getUserProfileById);
-router.patch("/patch", verifyJWT, updateUserProfile);
+router.patch("/patch", verifyJWT, singleAttachement, updateUserProfile);
 router.get("/notifications", verifyJWT, getNotifications);
-router.get("/search-user/:searchTerm", searchUser);
+router.get("/search-user/:searchTerm", verifyJWT, searchUser);
 router.post("/refresh-token", refreshAccessToken);
 router.post("/logout/:id", verifyJWT, logoutUser)
 router.delete("/delete", verifyJWT, deleteUser);

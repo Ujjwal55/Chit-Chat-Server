@@ -3,11 +3,12 @@ import { Chat } from "../models/chat.model";
 import { ICustomRequest } from "../types/UserModel";
 import { Conversation } from "../models/conversation.model";
 import { emitEvent } from "../services/socket.service";
-import { ALERT, NEW_ATTACHEMENT, NEW_MESSAGE_ALERT, REFETCH_CHATS } from "../constants/event.constants";
+import { ALERT, NEW_ATTACHEMENT, NEW_MESSAGE, NEW_MESSAGE_ALERT, REFETCH_CHATS } from "../constants/event.constants";
 import mongoose, { ObjectId } from "mongoose";
 import { User } from "../models/user.model";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/ApiError";
+import { uploadMultipleFilesOnCloudinary } from "../services/cloudinary.service";
 
 
 export const newGroupChat = asyncHandler(async (req: ICustomRequest, res: Response) => {
@@ -19,35 +20,20 @@ export const newGroupChat = asyncHandler(async (req: ICustomRequest, res: Respon
     const allMembers = members.concat(senderId);
     const newChat = await Chat.create({ name, members: allMembers, creator: senderId, groupChat: true });
     emitEvent(req, ALERT, allMembers, { chat: newChat, action: "new_group_chat" });
-    emitEvent(req, REFETCH_CHATS, members, {});
+    emitEvent(req, REFETCH_CHATS, allMembers, {});
     res.status(201).json({ message: "Group chat created successfully" });
 });
 
 export const getChats = asyncHandler(async (req: ICustomRequest, res: Response) => {
     const userId = req.user?._id;
-    const userChats = await Chat.aggregate([
-        { $match: { members: { $in: [userId] } } },
-        { $lookup: { from: "users", localField: "members", foreignField: "_id", as: "membersInfo" } },
-        {
-            $addFields: {
-              otherMembers: { $filter: { input: "$membersInfo", as: "member", cond: { $ne: ["$$member._id", userId] } } },
-            }
-          },
-          {
-            $addFields: {
-              chatName: {
-                $cond: {
-                  if: "$groupChat",
-                  then: "$name",
-                  else: { $arrayElemAt: ["$otherMembers.fullName", 0] }
-                }
-              }
-            }
-          },
-        { $project: { otherMembers: 1, chatName: 1 } }
-    ]);
-    console.log("userChaaaaaaa", userChats);
-    res.status(200).json(userChats);
+    const userChats = await Chat.find({members: {
+        $in: userId
+    }}, {
+        name: 1,
+        members: 1,
+        groupChat: 1
+    }).populate("members")
+    res.status(200).json({data: userChats});
 });
 
 export const addMembers = asyncHandler(async (req: ICustomRequest, res: Response) => {
@@ -159,41 +145,45 @@ export const getUserGroups = asyncHandler(async (req: ICustomRequest, res: Respo
 });
 
 export const addMessage = asyncHandler(async (req: ICustomRequest, res: Response) => {
-    const { id: receiverId } = req.params;
-    const senderId = req?.user?._id;
-    const { message } = req.body;
+    const { id: senderId } = req.params;
+    const { message, chatId } = req.body;
 
-    let conversation = await Conversation.findOne({
-        participants: { $all: [senderId, receiverId] }
-    });
-    if (!conversation) {
-        conversation = await Conversation.create({
-            participants: [senderId, receiverId]
-        });
+    let conversation = await Chat.findOne({_id: chatId});
+
+    if(!conversation) {
+        throw new ApiError(404, "Chat not found");
     }
-    const newMessage = new Chat({
+
+    const newMessage = new Conversation({
+        content: message,
         sender: senderId,
-        receiver: receiverId,
-        message,
+        chat: chatId,
     });
 
-    await Promise.all([newMessage.save(), conversation.save()]);
+    await newMessage.save();
+
+    // await Promise.all([newMessage.save(), conversation.save()]);
 
     res.status(201).json({ message: "Message sent successfully" });
 });
 
 export const addAttachement = asyncHandler(async (req: ICustomRequest, res: Response) => {
-    const chatId = req.params.id;
-    const senderId = req?.user?._id;
+    const { id: senderId } = req.params;
+    const { chatId } = req.body;
+    console.log('hereeee1', chatId, senderId);
     const [chat, user] = await Promise.all([Chat.findById(chatId), User.findById(senderId, "fullName profileImageURL")]);
     if (!chat) {
         throw new ApiError(404, "Chat not found");
     }
-    const files = req.files || [] as Express.Multer.File[];
+    const files: Express.Multer.File[] = req.files as Express.Multer.File[];
     if (files && files.length === 0) {
         throw new ApiError(400, "No files uploaded");
     }
-    const attachments: any = [];
+    console.log("here222");
+    const uploadedFiles = await uploadMultipleFilesOnCloudinary(files);
+
+    const attachments = uploadedFiles.filter(upload => upload !== null && upload.url)?.map(upload => upload && upload.url);
+
     const messageToShow = {
         content: "",
         attachments,
@@ -210,8 +200,8 @@ export const addAttachement = asyncHandler(async (req: ICustomRequest, res: Resp
         sender: senderId,
         chat: chatId,
     };
-    const conversation = await Conversation.create(messageForDB); 
-    emitEvent(req, NEW_ATTACHEMENT, chat.members, {
+    const conversation = (await Conversation.create(messageForDB)).save();
+    emitEvent(req, NEW_MESSAGE, chat.members, {
         message: messageToShow,
         chatId,
     });
@@ -250,6 +240,6 @@ export const renameGroup = asyncHandler(async (req: ICustomRequest, res: Respons
 export const getChatMessages = asyncHandler(async (req: ICustomRequest, res: Response) => {
     const { id: chatId } = req.params;
     const { page, limit } = req.query;
-    const messages = await Conversation.find({ chat: chatId }).sort({ createdAt: -1 }).skip((Number(page) - 1) * Number(limit)).limit(Number(limit)).populate("sender");
-    res.status(200).send(messages);
+    const messages = await Conversation.find({ chat: chatId }).skip((Number(page) - 1) * Number(limit)).limit(Number(limit)).populate("sender");
+    res.status(200).send({data: messages});
 });

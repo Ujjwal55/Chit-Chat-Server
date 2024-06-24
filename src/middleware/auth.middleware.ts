@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from "express"
 import jwt, { Secret } from "jsonwebtoken"
 import { User } from "../models/user.model";
 import { ICustomRequest, IJWTPayload } from "../types/UserModel";
+import { ApiError } from "../utils/ApiError";
 
 export const verifyJWT = async (req: ICustomRequest, res: Response, next: NextFunction) => {
     try {
@@ -28,7 +29,7 @@ export const socketAuthenticator = async (err: any, socket: any, next: any) => {
         }
         const authToken = socket.request.cookies["chat-auth"] || socket.request.headers?.authorization?.replace("Bearer ", "");
         if(!authToken) {
-            return next();
+            return next(new ApiError(401, "Unauthorized"));
         }
         const decoded = await jwt.verify(authToken, process.env.JWT_ACCESS_TOKEN as Secret) as IJWTPayload;
         socket.user = await User.findById(decoded?._id).select("-password");

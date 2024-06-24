@@ -33,7 +33,7 @@ export const sendFriendRequest = asyncHandler(async (req: ISendFriendRequest, re
         status: "pending",
     });
 
-    emitEvent(NEW_REQUEST, [friendId], "request", {});
+    emitEvent(req, NEW_REQUEST, [friendId], {});
     await friendship.save();
 
     res.status(201).json({ message: "Friend request sent successfully" });
@@ -42,7 +42,7 @@ export const sendFriendRequest = asyncHandler(async (req: ISendFriendRequest, re
 export const getFriendRequests = asyncHandler(async (req: ICustomRequest, res: Response) => {
     const userId = req.user?._id;
     const friendRequests = await Friendship.find({ to: userId, status: "pending" }).populate("from");
-    res.status(200).json({ friendRequests });
+    res.status(200).json({data: friendRequests});
 });
 
 export const respondToFriendRequest = asyncHandler(async (req: IResponseFriendRequest, res: Response) => {
@@ -92,4 +92,150 @@ export const removeFriend = asyncHandler(async (req: Request, res: Response) => 
     await User.findByIdAndUpdate(userId, { $pull: { friends: friendship._id } });
 
     res.status(200).json({ message: "Friend removed successfully" });
+});
+
+export const searchFriend = asyncHandler(async (req: ICustomRequest, res: Response) => {
+    const userId = req.user?._id;
+    let { searchTerm } = req.params;
+    searchTerm = searchTerm?.toString().toLowerCase();
+    if (!searchTerm) {
+        throw new ApiError(400, "Search term is required");
+    }
+    const friendsList = await User.aggregate([
+        {
+            $match: {
+                $and: [
+                    { _id: { $ne: userId } },
+                    {
+                        $or: [
+                            { userName: { $regex: searchTerm, $options: "i" } },
+                            { fullName: { $regex: searchTerm, $options: "i" } }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            $lookup: {
+                from: "friendships",
+                let: { userId: "$_id" },
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: {
+                                $or: [
+                                   {
+                                    $and: [
+                                        {
+                                            $eq: ["$from", userId],
+                                        },
+                                        {
+                                            $eq: ["$to", "$$userId"]
+                                        },
+                                        {
+                                            $eq: ["$status", "accepted"]
+                                        }
+                                    ],
+                                   },
+                                   {
+                                    $and: [
+                                        {
+                                            $eq: ["$from", "$$userId"],
+                                        },
+                                        {
+                                            $eq: ["$to", userId]
+                                        },
+                                        {
+                                            $eq: ["$status", "accepted"]
+                                        }
+                                    ],
+                                   }
+                                ],
+                            }
+                        }
+                    }
+                ],
+                as: "friendship"
+            }
+        },
+        {
+            $match: {
+                "friendship": { $ne: [] }
+            }
+        },
+        {
+            $lookup: {
+                from: "chats",
+                let: { userId: "$_id" },
+                pipeline: [
+                    {
+                        $match: {
+                            groupChat: false,
+                            $expr: {
+                                $and: [
+                                    {
+                                        $in: [
+                                            userId, "$members"
+                                        ]
+                                    },
+                                    {
+                                        $in: [
+                                            "$$userId", "$members"
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        $lookup: {
+                            from: "users",
+                            localField: "members",
+                            foreignField: "_id",
+                            as: "memberDetails"
+                        }
+                    },
+                    {
+                        $addFields: {
+                            members: "$memberDetails"
+                        }
+                    },
+                    {
+                        $project: {
+                            memberDetails: 0
+                        }
+                    }
+                ],
+                as: "chatDetails"
+            }
+        },
+        {
+            $addFields: {
+                chat: {
+                    $cond: {
+                        if: { $gt: [ { $size: "$chatDetails" }, 0 ] },
+                        then: {
+                            exists: true,
+                            details: { $arrayElemAt: ["$chatDetails", 0]}
+                        },
+                        else: {
+                            exists: false,
+                            details: null
+                        }                        
+                    }
+                }
+            }
+        },
+        {
+            $project: {                  
+                _id: 1,
+                userName: 1,
+                email: 1,
+                fullName: 1,
+                profilePicture: 1,
+                chat: 1
+            }
+        }
+    ])
+    res.status(200).json({data: friendsList});
 });

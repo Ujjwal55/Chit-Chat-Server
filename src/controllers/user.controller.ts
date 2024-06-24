@@ -11,9 +11,11 @@ import { TokenOptions } from "../constants/token.constants";
 import { Friendship } from "../models/friends.model";
 import { ApiError } from "../utils/ApiError";
 import { asyncHandler } from "../utils/asyncHandler";
+import mongoose from "mongoose";
+import { uploadOnCloudinary } from "../services/cloudinary.service";
 
-export const registerUser = asyncHandler(async (req: Request, res: Response) => {
-    const { userName, password, fullName, email, profileImageURL } = req.body;
+export const registerUser = asyncHandler(async (req: any, res: Response) => {
+    const { userName, password, fullName, email } = req.body;
     if (!userName || !password || !fullName || !email) {
         throw new ApiError(400, "All fields are required");
     }
@@ -29,11 +31,14 @@ export const registerUser = asyncHandler(async (req: Request, res: Response) => 
     if (existingUser) {
         throw new ApiError(409, "User already exists");
     }
+    const imageURL = req?.file?.path;
+    const userProfileURL = await uploadOnCloudinary(imageURL);
     const newUser = new User({
         email,
         password,
         fullName,
         userName: userName?.toLowerCase(),
+        profileImageURL: userProfileURL?.url || ""
     });
     const token = await new Token({
         userId: newUser._id,
@@ -57,10 +62,10 @@ export const loginUser = asyncHandler(async (req: Request, res: Response) => {
     if (!user) {
         throw new ApiError(404, "User not found");
     }
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-        throw new ApiError(401, "Invalid credentials");
-    }
+    // const isPasswordValid = await bcrypt.compare(password, user.password);
+    // if (!isPasswordValid) {
+    //     throw new ApiError(401, "Invalid credentials");
+    // }
     const { accessToken, refreshToken } = await generateAccessToken(user._id) as IAccessRefreshToken;
     res.status(200).cookie("refreshToken", refreshToken, TokenOptions).cookie("chat-auth", accessToken, TokenOptions).json({ user, accessToken });
 });
@@ -93,17 +98,27 @@ export const getUserProfileById = asyncHandler(async (req: Request, res: Respons
 
 export const updateUserProfile = asyncHandler(async (req: ICustomRequest, res: Response) => {
     const id = req?.user?._id;
-    const { name, email, password } = req.body;
-    const user = await User.findByIdAndUpdate(id, {
-        $set: {
-            name,
-            email,
-            password
+    const { fullName, email, oldPassword, password } = req.body;
+    const imageURL = req?.file?.path;
+    console.log("fullllllllll", fullName, email, oldPassword, password, imageURL);
+    const userProfileURL = await uploadOnCloudinary(imageURL);
+    const user = await User.findById(id);
+    if(!user) {
+        throw new ApiError(404, "User not found")
+    }
+    if (oldPassword && password) {
+        const isMatch = await bcrypt.compare(oldPassword, user.password);
+        if (!isMatch) {
+            throw new ApiError(400, "Password don't match")
         }
-    }, {
-        new: true
-    });
-    res.status(200).json({ user });
+        user.password = password;
+    }
+    if(fullName) user.fullName = fullName;
+    if(email) user.email = email;
+    if(userProfileURL) user.profileImageURL = userProfileURL?.url
+    
+    const updatedUser = await user.save();
+    return res.status(200).json({ user: updatedUser });
 });
 
 export const refreshAccessToken = asyncHandler(async (req: Request, res: Response) => {
@@ -133,7 +148,6 @@ export const searchUser = asyncHandler(async (req: ICustomRequest, res: Response
     if (!searchTerm) {
         throw new ApiError(400, "Search term is required");
     }
-    console.log("searchTerm", searchTerm);
     const searchResult = await User.aggregate([
         {
             $match: {
@@ -149,12 +163,55 @@ export const searchUser = asyncHandler(async (req: ICustomRequest, res: Response
             },
         },
         {
+            $lookup: {
+                from: "friendships",
+                let: { userId: "$_id" },
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: {
+                                $or: [
+                                    {
+                                        $and: [
+                                            { $eq: ['$from', new mongoose.Types.ObjectId(userId)] },
+                                            { $eq: ['$to', '$$userId'] }
+                                        ]
+                                    },
+                                    {
+                                        $and: [
+                                            { $eq: ['$to', new mongoose.Types.ObjectId(userId)] },
+                                            { $eq: ['$from', '$$userId'] }
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                ],
+                as: 'friendRequest'
+            }
+        },
+        {
+            $addFields: {
+                friendShipStatus: {
+                    $cond: {
+                        if: { $gt: [{ $size: '$friendRequest'}, 0]},
+                        then: {
+                            $arrayElemAt: ['$friendRequest.status', 0]
+                        },
+                        else: null
+                    }
+                }
+            }
+        },
+        {
             $project: {
                 _id: 1,
                 userName: 1,
                 fullName: 1,
                 email: 1,
-                profilePicture: 1
+                profilePicture: 1,
+                friendShipStatus: 1
             }
         }
     ]);

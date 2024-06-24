@@ -14,6 +14,6 @@ export const multerUpload = multer({ storage: storage, limits: {
 } })
 
 const singleAttachement = multerUpload.single('profileImageURL');
-const multipleAttachements = multerUpload.array('files', 10);
+const multipleAttachements = multerUpload.array('attachments', 10);
 
 export {singleAttachement, multipleAttachements};

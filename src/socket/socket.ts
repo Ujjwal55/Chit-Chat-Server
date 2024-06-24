@@ -1,7 +1,7 @@
 import {Server} from "socket.io"
 import http from "http"
 import express from "express"
-import { NEW_MESSAGE, NEW_MESSAGE_ALERT } from "../constants/event.constants"
+import { NEW_MESSAGE, NEW_MESSAGE_ALERT, START_TYPING, STOP_TYPING } from "../constants/event.constants"
 import { v4 as uuid} from "uuid";
 import { getSockets } from "../services/socket.service";
 import { Conversation } from "../models/conversation.model";
@@ -23,6 +23,9 @@ const io = new Server(server, {
     }
 })
 
+app.set("io", io);
+
+
 io.use((socket: any, next) => {
     cookieParser()(
         socket.request,
@@ -33,7 +36,9 @@ io.use((socket: any, next) => {
 
 io.on("connection", (socket: ICustomSocket) => {
     const user = socket?.user
+    console.log("herereeee", user);
     userSocketIds.set(user?._id.toString(), socket?.id);
+    console.log('userSocketIds', userSocketIds);
     socket.on(NEW_MESSAGE, async ({chatId, members, message}: any) => {
         const messageForRealTime = {
             content: message,
@@ -50,7 +55,7 @@ io.on("connection", (socket: ICustomSocket) => {
             sender: user?._id,
             chat: chatId,
         }
-        const usersSocket = getSockets(members, userSocketIds);
+        const usersSocket = getSockets(members);
         io.to(usersSocket).emit(NEW_MESSAGE, {
             chatId,
             message: messageForRealTime
@@ -61,6 +66,16 @@ io.on("connection", (socket: ICustomSocket) => {
         } catch (error: any) {
             console.log("error", error);
         }
+    });
+
+    socket.on(START_TYPING, ({members, chatId}) => {
+        const memberSockets = getSockets(members);
+        socket.to(memberSockets).emit(START_TYPING, { chatId });
+    })
+
+    socket.on(STOP_TYPING, ({members, chatId}) => {
+        const memberSockets = getSockets(members);
+        socket.to(memberSockets).emit(STOP_TYPING, { chatId });
     })
 
     socket.on("disconnect", () => {
@@ -69,4 +84,4 @@ io.on("connection", (socket: ICustomSocket) => {
     })
 })
 
-export {app, io, server}
+export {app, io, server, userSocketIds}

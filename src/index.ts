@@ -13,7 +13,7 @@ dotenv.config()
 
 app.use(cors({
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     origin: "http://localhost:3000",
     },
 ))
